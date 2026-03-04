@@ -20,9 +20,10 @@ $metrics = [
     'remaining_hours' => 486,
     'remaining_days' => 0,
     'estimated_date' => '--',
-    'is_complete' => false
+    'is_complete' => false,
+    'avg_daily' => 0,
+    'req_daily' => 0
 ];
-$working_days = 0;
 $goal_hours = 486;
 
 if ($user_id) {
@@ -36,18 +37,7 @@ if ($user_id) {
         $stmt = $conn->prepare("SELECT * FROM entries WHERE user_id = :user_id ORDER BY log_date DESC, created_at DESC");
         $stmt->execute([':user_id' => $user_id]);
         $logs = formatLogs($stmt->fetchAll(PDO::FETCH_ASSOC));
-        
-        // Fetch dynamic completion metrics from functions.php
         $metrics = getCompletionMetrics($conn, $user_id, $goal_hours);
-        
-        $present_dates = [];
-        foreach($logs as $l) {
-            if ($l['status'] === 'Present') {
-                $present_dates[] = $l['log_date'];
-            }
-        }
-        $working_days = count(array_unique($present_dates));
-        
     } catch (PDOException $e) {}
 }
 
@@ -98,148 +88,114 @@ function isActive($currentPage, $linkPage) {
     <main class="<?php echo $user_id ? 'main-content' : 'flex items-center justify-center min-h-screen'; ?>">
         <div id="status-message" class="hidden mb-6"></div>
 
-        <?php if ($page === 'login'): ?>
-            <!-- Login Form -->
-            <div class="glass-card w-full max-w-[400px]">
-                <h2 class="text-xl font-bold mb-2">Access Console</h2>
-                <p class="text-gray-400 text-sm mb-6 font-mono lowercase">Enter identity parameters</p>
-                <form id="loginForm" class="space-y-4">
-                    <input type="email" name="email" placeholder="Email" required class="w-full p-3 outline-none transition">
-                    <input type="password" name="password" placeholder="Password" required class="w-full p-3 outline-none transition">
-                    <button type="submit" class="btn-primary w-full mt-2 uppercase tracking-widest text-xs py-3">Login</button>
-                </form>
-                <p class="text-center text-xs text-gray-500 mt-6 font-mono uppercase">New sequence? <a href="?page=signup" class="text-blue-400 font-bold hover:underline">Register</a></p>
-            </div>
-
-        <?php elseif ($page === 'signup'): ?>
-            <!-- Signup Form -->
-            <div class="glass-card w-full max-w-[400px]">
-                <h2 class="text-xl font-bold mb-2">Create Identity</h2>
-                <p class="text-gray-400 text-sm mb-6 font-mono lowercase">Register new intern sequence</p>
-                <form id="signupForm" class="space-y-4">
-                    <input type="text" name="name" placeholder="Full Name" required class="w-full p-3 outline-none transition">
-                    <input type="email" name="email" placeholder="Email Address" required class="w-full p-3 outline-none transition">
-                    <input type="password" name="password" placeholder="Password" required class="w-full p-3 outline-none transition">
-                    <button type="submit" class="btn-primary w-full mt-2 uppercase tracking-widest text-xs py-3">Initialize Account</button>
-                </form>
-                <p class="text-center text-xs text-gray-500 mt-6 font-mono uppercase">Identity exists? <a href="?page=login" class="text-blue-400 font-bold hover:underline">Login</a></p>
-            </div>
-
-        <?php elseif ($page === 'dashboard'): ?>
-            <header class="flex justify-between items-center mb-8">
+        <?php if ($page === 'dashboard'): ?>
+            <header class="flex justify-between items-end mb-8">
                 <div>
-                    <h1 class="text-2xl font-bold">Activity Dashboard</h1>
-                    <p class="text-gray-400 text-sm font-mono lowercase">Session Metrics</p>
+                    <h1 class="text-2xl font-bold">Workspace</h1>
+                    <p class="text-gray-400 text-sm font-mono lowercase">evaluation & logging</p>
                 </div>
                 <div class="flex gap-4">
-                    <div class="glass-card flex flex-col justify-center px-4 py-2 border-green-500/20">
-                        <span class="text-[8px] text-gray-500 uppercase font-black tracking-widest">Est. Completion</span>
-                        <span id="est-date-header" class="text-sm font-mono font-bold text-green-400"><?php echo $metrics['estimated_date']; ?></span>
+                    <div class="glass-card flex flex-col justify-center px-4 py-2 border-white/5">
+                        <span class="text-[8px] text-gray-500 uppercase font-black tracking-widest">Weekly Total</span>
+                        <span id="weekly-total-stat" class="text-sm font-mono font-bold text-blue-400">--</span>
                     </div>
-                    <div class="glass-card flex flex-col justify-center px-4 py-2">
-                        <span class="text-[8px] text-gray-500 uppercase font-black tracking-widest">Days Left</span>
-                        <span class="total-days-left text-sm font-mono font-bold text-blue-400"><?php echo $metrics['remaining_days']; ?>d</span>
-                    </div>
-                    <div class="glass-card flex flex-col justify-center px-4 py-2">
-                        <span class="text-[8px] text-gray-500 uppercase font-black tracking-widest">Total Hours</span>
-                        <span class="total-hours-header text-xl font-mono font-bold text-blue-400"><?php echo number_format($metrics['rendered_hours'], 2); ?>h</span>
+                    <div class="glass-card flex flex-col justify-center px-4 py-2 border-white/5">
+                        <span class="text-[8px] text-gray-500 uppercase font-black tracking-widest">Status</span>
+                        <span id="trend-stat" class="text-[10px] font-black uppercase tracking-widest text-gray-500">...</span>
                     </div>
                 </div>
             </header>
 
-            <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
-                <section class="xl:col-span-1">
-                    <div class="glass-card">
+            <div class="grid grid-cols-1 xl:grid-cols-4 gap-8">
+                <div class="xl:col-span-1 space-y-6">
+                    <button id="toggleFormBtn" class="w-full py-4 glass-card border-dashed border-white/20 text-xs font-black uppercase tracking-widest hover:border-blue-500/50 transition">
+                        [ + ] Add New Entry
+                    </button>
+                    
+                    <div id="formContainer" class="glass-card hidden">
                         <div class="flex justify-between items-center mb-6">
-                            <h2 id="formTitle" class="text-xs font-black text-gray-500 uppercase tracking-widest">New Entry</h2>
+                            <h2 class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Session Data</h2>
                             <div class="flex gap-2">
-                                <button type="button" id="markAbsentBtn" class="text-[10px] font-black text-red-500 uppercase tracking-widest border border-red-500/30 px-2 py-1 rounded hover:bg-red-500/10 transition">Mark Absent</button>
-                                <button type="button" id="markPresentBtn" class="hidden text-[10px] font-black text-green-500 uppercase tracking-widest border border-green-500/30 px-2 py-1 rounded hover:bg-green-500/10 transition">Mark Present</button>
+                                <button type="button" id="markAbsentBtn" class="text-[8px] font-black text-red-500 uppercase tracking-widest border border-red-500/30 px-2 py-1 rounded">Absent</button>
+                                <button type="button" id="markPresentBtn" class="hidden text-[8px] font-black text-green-500 uppercase tracking-widest border border-green-500/30 px-2 py-1 rounded">Present</button>
                             </div>
                         </div>
-                        
                         <form id="logForm" class="space-y-4">
                             <input type="hidden" name="id" id="entryIdInput">
                             <input type="hidden" name="status" id="statusInput" value="Present">
-                            <div>
-                                <label class="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Date</label>
-                                <input type="date" name="log_date" required class="w-full p-3 outline-none">
-                            </div>
-                            <div id="timeInputs" class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">In</label>
-                                    <input type="time" name="start_time" class="w-full p-3 outline-none">
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Out</label>
-                                    <input type="time" name="end_time" class="w-full p-3 outline-none">
-                                </div>
+                            <input type="date" name="log_date" required class="w-full p-3 text-xs">
+                            <div id="timeInputs" class="grid grid-cols-2 gap-2">
+                                <input type="time" name="start_time" class="w-full p-3 text-xs">
+                                <input type="time" name="end_time" class="w-full p-3 text-xs">
                             </div>
                             <div id="tasksInput">
-                                <label class="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Tasks</label>
-                                <textarea name="tasks" rows="5" placeholder="Session details..." class="w-full p-3 outline-none resize-none" required></textarea>
+                                <textarea name="tasks" rows="3" placeholder="Description (Optional)" class="w-full p-3 text-xs resize-none"></textarea>
                             </div>
                             <div id="remarksInput" class="hidden">
-                                <label class="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Absence Reason</label>
-                                <textarea name="remarks" rows="5" placeholder="Reason for absence..." class="w-full p-3 outline-none resize-none"></textarea>
+                                <textarea name="remarks" rows="3" placeholder="Reason..." class="w-full p-3 text-xs resize-none"></textarea>
                             </div>
-                            <button type="submit" id="submitBtn" class="btn-primary w-full mt-2 uppercase tracking-widest text-xs py-3">Deploy Entry</button>
+                            <button type="submit" class="btn-primary w-full uppercase tracking-widest text-[10px] py-3">Deploy Entry</button>
                         </form>
                     </div>
-                </section>
 
-                <section class="xl:col-span-2">
+                    <div class="glass-card">
+                        <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4">Weekly Trend</p>
+                        <div id="weekly-chart" class="h-24 flex gap-1 items-end">
+                            <!-- Bars generated by script.js -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="xl:col-span-3 space-y-6">
                     <div class="glass-card p-0 overflow-hidden">
-                        <div class="p-4 border-b border-[#24272e] flex justify-between items-center">
-                            <h2 class="text-sm font-black text-gray-500 uppercase tracking-widest">Sequence Log History</h2>
-                            <div class="text-[10px] font-mono text-gray-500">
-                                Total Logs: <span class="total-logs-count"><?php echo count($logs); ?></span>
+                        <div class="p-4 border-b border-[#24272e] flex flex-wrap gap-4 justify-between items-center bg-white/[0.02]">
+                            <div class="flex gap-6 items-center flex-1">
+                                <h2 class="text-xs font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Sequence Log</h2>
+                                <div class="relative flex-1 max-w-xs group">
+                                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <svg class="h-3 w-3 text-gray-500 group-focus-within:text-blue-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                        </svg>
+                                    </span>
+                                    <input type="text" id="tableSearch" placeholder="Filter sequences..." class="w-full bg-[#1b1e26] border border-[#24272e] py-2 pl-9 pr-4 rounded-lg text-xs outline-none font-mono text-gray-300 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all">
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="text-[10px] font-black uppercase text-gray-500 tracking-widest">Period:</label>
+                                <select id="monthFilter" class="bg-[#1b1e26] border border-[#24272e] px-3 py-2 rounded-lg text-[10px] font-black uppercase text-gray-400 outline-none focus:border-blue-500/50 transition-colors cursor-pointer">
+                                    <option value="">All History</option>
+                                    <?php 
+                                        $months = [];
+                                        foreach($logs as $l) $months[] = substr($l['log_date'], 0, 7);
+                                        foreach(array_unique($months) as $m) echo "<option value='$m'>".date("M Y", strtotime($m))."</option>";
+                                    ?>
+                                </select>
                             </div>
                         </div>
                         <div class="overflow-x-auto">
                             <table class="w-full text-left">
                                 <thead class="table-header">
                                     <tr>
-                                        <th class="px-6 py-4">Date</th>
-                                        <th class="px-6 py-4">Interval</th>
+                                        <th class="px-6 py-4">Session Date</th>
                                         <th class="px-6 py-4">Description</th>
                                         <th class="px-6 py-4 text-right">Hours</th>
                                         <th class="px-6 py-4 text-right">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-[#24272e]">
-                                    <?php if(empty($logs)): ?>
-                                        <tr><td colspan="5" class="px-6 py-12 text-center text-gray-500 font-mono text-xs uppercase">No logs detected.</td></tr>
-                                    <?php else: ?>
-                                        <?php foreach ($logs as $log): ?>
-                                            <tr class="table-row">
-                                                <td class="px-6 py-4 whitespace-nowrap font-mono text-sm">
-                                                    <?php echo $log['formatted_date']; ?>
-                                                    <?php if($log['status'] === 'Absent'): ?>
-                                                        <span class="ml-2 text-[8px] bg-red-500/20 text-red-400 px-1 rounded uppercase">Absent</span>
-                                                    <?php endif; ?>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-500 font-mono">
-                                                    <?php echo $log['status'] === 'Absent' ? '-- : --' : $log['formatted_start'] . ' - ' . $log['formatted_end']; ?>
-                                                </td>
-                                                <td class="px-6 py-4 text-sm max-w-xs truncate text-gray-400">
-                                                    <?php echo $log['status'] === 'Absent' ? '<em>Reason: ' . htmlspecialchars($log['remarks'] ?? '') . '</em>' : $log['tasks']; ?>
-                                                </td>
-                                                <td class="px-6 py-4 text-right font-mono font-bold text-blue-400">
-                                                    <?php echo number_format($log['total_hours'], 2); ?>
-                                                </td>
-                                                <td class="px-6 py-4 text-right space-x-2">
-                                                    <button data-id="<?php echo $log['id']; ?>" data-log='<?php echo json_encode($log); ?>' class="edit-btn text-blue-400 hover:text-blue-300 text-[10px] font-black uppercase tracking-widest">[Edit]</button>
-                                                    <button data-id="<?php echo $log['id']; ?>" class="delete-btn text-red-500/60 hover:text-red-500 text-[10px] font-black uppercase tracking-widest">[Remove]</button>
-                                                </td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    <?php endif; ?>
+                                    <!-- Rows generated by script.js -->
                                 </tbody>
                             </table>
                         </div>
+                        <div class="p-4 flex justify-between items-center border-t border-[#24272e] bg-white/[0.01]">
+                            <span id="paginationInfo" class="text-[10px] font-mono text-gray-500 uppercase tracking-widest">Page 1 of 1</span>
+                            <div class="flex gap-4">
+                                <button id="prevPage" class="text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-white transition">Prev</button>
+                                <button id="nextPage" class="text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-white transition">Next</button>
+                            </div>
+                        </div>
                     </div>
-                </section>
+                </div>
             </div>
 
         <?php elseif ($page === 'analytics'): ?>
@@ -250,20 +206,38 @@ function isActive($currentPage, $linkPage) {
             
             <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                 <div class="glass-card">
-                    <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Remaining Workdays</p>
-                    <p id="remaining-days-stat" class="text-3xl font-mono font-bold text-green-400"><?php echo $metrics['remaining_days']; ?></p>
+                    <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Average per day</p>
+                    <p id="avg-hours-stat" class="text-3xl font-mono font-bold text-blue-400"><?php echo number_format($metrics['avg_daily'], 1); ?>h</p>
+                    <p class="text-[8px] text-gray-600 uppercase font-black mt-1">Based on recent sessions</p>
                 </div>
                 <div class="glass-card">
-                    <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Total Accumulated</p>
-                    <p class="text-3xl font-mono font-bold text-blue-400"><?php echo number_format($metrics['rendered_hours'], 2); ?>h</p>
+                    <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Required Daily</p>
+                    <p id="req-hours-stat" class="text-3xl font-mono font-bold text-yellow-400"><?php echo number_format($metrics['req_daily'], 1); ?>h</p>
+                    <p class="text-[8px] text-gray-600 uppercase font-black mt-1">To finish on schedule</p>
                 </div>
                 <div class="glass-card">
                     <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Estimated Date</p>
                     <p id="est-date-stat" class="text-xl font-mono font-bold text-purple-400 uppercase"><?php echo $metrics['estimated_date']; ?></p>
+                    <p id="est-date-label" class="text-[8px] text-gray-600 uppercase font-black mt-1">Based on average of last 7 days</p>
+                </div>
+                <div class="glass-card flex flex-col justify-between h-full">
+                    <div>
+                        <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Status Evaluation</p>
+                        <p id="trend-stat" class="text-[10px] font-black uppercase tracking-widest">
+                            <?php echo $metrics['avg_daily'] >= $metrics['req_daily'] ? '<span class="text-green-400">Ahead of schedule</span>' : '<span class="text-red-400">Behind schedule</span>'; ?>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div class="glass-card">
+                    <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Remaining Workdays</p>
+                    <p id="remaining-days-stat" class="text-3xl font-mono font-bold text-green-400"><?php echo $metrics['remaining_days']; ?></p>
                 </div>
                 <div class="glass-card">
-                    <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Completion</p>
-                    <p class="text-3xl font-mono font-bold text-yellow-400"><?php echo number_format($progress_percent, 1); ?>%</p>
+                    <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Accumulated Hours</p>
+                    <p class="text-3xl font-mono font-bold text-blue-400"><?php echo number_format($metrics['rendered_hours'], 2); ?>h</p>
                 </div>
             </div>
 
@@ -272,8 +246,10 @@ function isActive($currentPage, $linkPage) {
                     <h2 class="text-sm font-black text-gray-500 uppercase tracking-widest">Internship Progress</h2>
                     <span class="text-xs font-mono lowercase"><?php echo number_format($metrics['rendered_hours'], 1); ?> / <?php echo $goal_hours; ?> hours</span>
                 </div>
-                <div class="w-full bg-white/5 h-4 rounded-full overflow-hidden border border-white/10 p-[2px]">
-                    <div id="progress-bar" class="bg-blue-600 h-full rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(37,99,235,0.4)]" style="width: <?php echo $progress_percent; ?>%"></div>
+                <div class="w-full bg-white/5 h-6 rounded-full overflow-hidden border border-white/10 p-[2px]">
+                    <div id="progress-bar" class="bg-blue-600 h-full rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(37,99,235,0.4)] flex items-center justify-center" style="width: <?php echo $progress_percent; ?>%">
+                        <span class="text-[10px] font-black text-white"><?php echo round($progress_percent); ?>%</span>
+                    </div>
                 </div>
             </div>
 
@@ -317,7 +293,6 @@ function isActive($currentPage, $linkPage) {
         <?php endif; ?>
     </main>
 
-    <!-- Custom Console Modal -->
     <div id="customModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
         <div class="glass-card max-w-sm w-full border-white/10 shadow-2xl">
             <h3 id="modalTitle" class="text-lg font-bold mb-2"></h3>
@@ -329,7 +304,6 @@ function isActive($currentPage, $linkPage) {
         </div>
     </div>
 
-    <!-- Scripts -->
     <script src="js/script.js"></script>
 </body>
 </html>
