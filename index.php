@@ -9,36 +9,37 @@ $user_email = '';
 
 $page = $_GET['page'] ?? 'dashboard';
 
-// Redirect logic
 if (!$user_id && !in_array($page, ['login', 'signup'])) {
     header("Location: ?page=login");
     exit;
 }
 
 $logs = [];
-$grand_total = 0;
-$total_logs = 0;
+$metrics = [
+    'rendered_hours' => 0,
+    'remaining_hours' => 486,
+    'remaining_days' => 0,
+    'estimated_date' => '--',
+    'is_complete' => false
+];
 $working_days = 0;
 $goal_hours = 486;
 
 if ($user_id) {
     try {
-        // Fetch user details for settings
         $u_stmt = $conn->prepare("SELECT email, name FROM users WHERE id = :id");
         $u_stmt->execute([':id' => $user_id]);
         $user_data = $u_stmt->fetch();
         $user_email = $user_data['email'] ?? '';
         $user_name = $user_data['name'] ?? 'Guest';
 
-        // Fetch logs
         $stmt = $conn->prepare("SELECT * FROM entries WHERE user_id = :user_id ORDER BY log_date DESC, created_at DESC");
         $stmt->execute([':user_id' => $user_id]);
         $logs = formatLogs($stmt->fetchAll(PDO::FETCH_ASSOC));
         
-        $grand_total = array_sum(array_column($logs, 'total_hours'));
-        $total_logs = count($logs);
+        // Fetch dynamic completion metrics from functions.php
+        $metrics = getCompletionMetrics($conn, $user_id, $goal_hours);
         
-        // Count unique days where student was present
         $present_dates = [];
         foreach($logs as $l) {
             if ($l['status'] === 'Present') {
@@ -50,8 +51,7 @@ if ($user_id) {
     } catch (PDOException $e) {}
 }
 
-$remaining_hours = max(0, $goal_hours - $grand_total);
-$progress_percent = min(100, ($grand_total / $goal_hours) * 100);
+$progress_percent = min(100, ($metrics['rendered_hours'] / $goal_hours) * 100);
 
 function isActive($currentPage, $linkPage) {
     return $currentPage === $linkPage ? 'bg-blue-600/10 text-blue-400' : 'text-gray-400 hover:bg-white/5';
@@ -96,10 +96,10 @@ function isActive($currentPage, $linkPage) {
     <?php endif; ?>
 
     <main class="<?php echo $user_id ? 'main-content' : 'flex items-center justify-center min-h-screen'; ?>">
-        <!-- System Alerts -->
         <div id="status-message" class="hidden mb-6"></div>
 
         <?php if ($page === 'login'): ?>
+            <!-- Login Form -->
             <div class="glass-card w-full max-w-[400px]">
                 <h2 class="text-xl font-bold mb-2">Access Console</h2>
                 <p class="text-gray-400 text-sm mb-6 font-mono lowercase">Enter identity parameters</p>
@@ -112,6 +112,7 @@ function isActive($currentPage, $linkPage) {
             </div>
 
         <?php elseif ($page === 'signup'): ?>
+            <!-- Signup Form -->
             <div class="glass-card w-full max-w-[400px]">
                 <h2 class="text-xl font-bold mb-2">Create Identity</h2>
                 <p class="text-gray-400 text-sm mb-6 font-mono lowercase">Register new intern sequence</p>
@@ -131,19 +132,22 @@ function isActive($currentPage, $linkPage) {
                     <p class="text-gray-400 text-sm font-mono lowercase">Session Metrics</p>
                 </div>
                 <div class="flex gap-4">
-                    <div class="glass-card flex items-center gap-4 py-2 px-4">
-                        <span class="text-[10px] text-gray-400 uppercase font-black tracking-widest">Logs</span>
-                        <span class="total-logs-count text-xl font-mono font-bold text-blue-400"><?php echo $total_logs; ?></span>
+                    <div class="glass-card flex flex-col justify-center px-4 py-2 border-green-500/20">
+                        <span class="text-[8px] text-gray-500 uppercase font-black tracking-widest">Est. Completion</span>
+                        <span id="est-date-header" class="text-sm font-mono font-bold text-green-400"><?php echo $metrics['estimated_date']; ?></span>
                     </div>
-                    <div class="glass-card flex items-center gap-4 py-2 px-4">
-                        <span class="text-[10px] text-gray-400 uppercase font-black tracking-widest">Hours</span>
-                        <span class="total-hours-header text-xl font-mono font-bold text-blue-400"><?php echo number_format($grand_total, 2); ?>h</span>
+                    <div class="glass-card flex flex-col justify-center px-4 py-2">
+                        <span class="text-[8px] text-gray-500 uppercase font-black tracking-widest">Days Left</span>
+                        <span class="total-days-left text-sm font-mono font-bold text-blue-400"><?php echo $metrics['remaining_days']; ?>d</span>
+                    </div>
+                    <div class="glass-card flex flex-col justify-center px-4 py-2">
+                        <span class="text-[8px] text-gray-500 uppercase font-black tracking-widest">Total Hours</span>
+                        <span class="total-hours-header text-xl font-mono font-bold text-blue-400"><?php echo number_format($metrics['rendered_hours'], 2); ?>h</span>
                     </div>
                 </div>
             </header>
 
             <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
-                <!-- Form -->
                 <section class="xl:col-span-1">
                     <div class="glass-card">
                         <div class="flex justify-between items-center mb-6">
@@ -157,12 +161,10 @@ function isActive($currentPage, $linkPage) {
                         <form id="logForm" class="space-y-4">
                             <input type="hidden" name="id" id="entryIdInput">
                             <input type="hidden" name="status" id="statusInput" value="Present">
-                            
                             <div>
                                 <label class="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Date</label>
                                 <input type="date" name="log_date" required class="w-full p-3 outline-none">
                             </div>
-                            
                             <div id="timeInputs" class="grid grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">In</label>
@@ -173,27 +175,26 @@ function isActive($currentPage, $linkPage) {
                                     <input type="time" name="end_time" class="w-full p-3 outline-none">
                                 </div>
                             </div>
-
                             <div id="tasksInput">
                                 <label class="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Tasks</label>
                                 <textarea name="tasks" rows="5" placeholder="Session details..." class="w-full p-3 outline-none resize-none" required></textarea>
                             </div>
-
                             <div id="remarksInput" class="hidden">
                                 <label class="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Absence Reason</label>
                                 <textarea name="remarks" rows="5" placeholder="Reason for absence..." class="w-full p-3 outline-none resize-none"></textarea>
                             </div>
-
                             <button type="submit" id="submitBtn" class="btn-primary w-full mt-2 uppercase tracking-widest text-xs py-3">Deploy Entry</button>
                         </form>
                     </div>
                 </section>
 
-                <!-- History -->
                 <section class="xl:col-span-2">
                     <div class="glass-card p-0 overflow-hidden">
-                        <div class="p-4 border-b border-[#24272e]">
+                        <div class="p-4 border-b border-[#24272e] flex justify-between items-center">
                             <h2 class="text-sm font-black text-gray-500 uppercase tracking-widest">Sequence Log History</h2>
+                            <div class="text-[10px] font-mono text-gray-500">
+                                Total Logs: <span class="total-logs-count"><?php echo count($logs); ?></span>
+                            </div>
                         </div>
                         <div class="overflow-x-auto">
                             <table class="w-full text-left">
@@ -215,7 +216,7 @@ function isActive($currentPage, $linkPage) {
                                                 <td class="px-6 py-4 whitespace-nowrap font-mono text-sm">
                                                     <?php echo $log['formatted_date']; ?>
                                                     <?php if($log['status'] === 'Absent'): ?>
-                                                        <span class="ml-2 text-[8px] bg-red-500/20 text-red-400 px-1 rounded">ABSENT</span>
+                                                        <span class="ml-2 text-[8px] bg-red-500/20 text-red-400 px-1 rounded uppercase">Absent</span>
                                                     <?php endif; ?>
                                                 </td>
                                                 <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-500 font-mono">
@@ -249,16 +250,16 @@ function isActive($currentPage, $linkPage) {
             
             <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                 <div class="glass-card">
-                    <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Working Days</p>
-                    <p class="text-3xl font-mono font-bold text-green-400"><?php echo $working_days; ?></p>
+                    <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Remaining Workdays</p>
+                    <p id="remaining-days-stat" class="text-3xl font-mono font-bold text-green-400"><?php echo $metrics['remaining_days']; ?></p>
                 </div>
                 <div class="glass-card">
                     <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Total Accumulated</p>
-                    <p class="text-3xl font-mono font-bold text-blue-400"><?php echo number_format($grand_total, 2); ?>h</p>
+                    <p class="text-3xl font-mono font-bold text-blue-400"><?php echo number_format($metrics['rendered_hours'], 2); ?>h</p>
                 </div>
                 <div class="glass-card">
-                    <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Remaining Goal</p>
-                    <p class="text-3xl font-mono font-bold text-purple-400"><?php echo number_format($remaining_hours, 2); ?>h</p>
+                    <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Estimated Date</p>
+                    <p id="est-date-stat" class="text-xl font-mono font-bold text-purple-400 uppercase"><?php echo $metrics['estimated_date']; ?></p>
                 </div>
                 <div class="glass-card">
                     <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Completion</p>
@@ -269,10 +270,10 @@ function isActive($currentPage, $linkPage) {
             <div class="glass-card mb-8">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-sm font-black text-gray-500 uppercase tracking-widest">Internship Progress</h2>
-                    <span class="text-xs font-mono lowercase"><?php echo number_format($grand_total, 1); ?> / <?php echo $goal_hours; ?> hours</span>
+                    <span class="text-xs font-mono lowercase"><?php echo number_format($metrics['rendered_hours'], 1); ?> / <?php echo $goal_hours; ?> hours</span>
                 </div>
                 <div class="w-full bg-white/5 h-4 rounded-full overflow-hidden border border-white/10 p-[2px]">
-                    <div class="bg-blue-600 h-full rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(37,99,235,0.4)]" style="width: <?php echo $progress_percent; ?>%"></div>
+                    <div id="progress-bar" class="bg-blue-600 h-full rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(37,99,235,0.4)]" style="width: <?php echo $progress_percent; ?>%"></div>
                 </div>
             </div>
 
@@ -305,7 +306,10 @@ function isActive($currentPage, $linkPage) {
                             <label class="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">New Password</label>
                             <input type="password" name="new_password" placeholder="••••••••" class="w-full p-3 outline-none">
                         </div>
-                        <p class="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Encrypted via console standards</p>
+                        <div>
+                            <label class="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Confirm Password</label>
+                            <input type="password" name="confirm_password" placeholder="••••••••" class="w-full p-3 outline-none">
+                        </div>
                         <button type="submit" class="btn-primary w-full uppercase tracking-widest text-xs py-3 mt-4">Update Security</button>
                     </form>
                 </div>
@@ -313,161 +317,19 @@ function isActive($currentPage, $linkPage) {
         <?php endif; ?>
     </main>
 
-    <script>
-        // Form Listeners
-        document.addEventListener('DOMContentLoaded', () => {
-            const loginForm = document.getElementById('loginForm');
-            const signupForm = document.getElementById('signupForm');
-            const logForm = document.getElementById('logForm');
-            const logTableBody = document.querySelector('tbody');
-            const statusMessage = document.getElementById('status-message');
+    <!-- Custom Console Modal -->
+    <div id="customModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="glass-card max-w-sm w-full border-white/10 shadow-2xl">
+            <h3 id="modalTitle" class="text-lg font-bold mb-2"></h3>
+            <p id="modalMessage" class="text-gray-400 text-sm mb-6 font-mono lowercase"></p>
+            <div class="flex justify-end gap-3">
+                <button id="modalCancel" class="px-4 py-2 text-xs font-black uppercase tracking-widest text-gray-500 hover:text-white transition">Cancel</button>
+                <button id="modalConfirm" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-black uppercase tracking-widest transition"></button>
+            </div>
+        </div>
+    </div>
 
-            // Absence Toggle
-            const mAbsentBtn = document.getElementById('markAbsentBtn');
-            const mPresentBtn = document.getElementById('markPresentBtn');
-            const tInputs = document.getElementById('timeInputs');
-            const tArea = document.getElementById('tasksInput');
-            const rArea = document.getElementById('remarksInput');
-            const sInput = document.getElementById('statusInput');
-
-            if (mAbsentBtn) {
-                mAbsentBtn.onclick = () => {
-                    sInput.value = 'Absent';
-                    tInputs.classList.add('hidden');
-                    tArea.classList.add('hidden');
-                    rArea.classList.remove('hidden');
-                    mAbsentBtn.classList.add('hidden');
-                    mPresentBtn.classList.remove('hidden');
-                    tArea.querySelector('textarea').required = false;
-                };
-            }
-            if (mPresentBtn) {
-                mPresentBtn.onclick = () => {
-                    sInput.value = 'Present';
-                    tInputs.classList.remove('hidden');
-                    tArea.classList.remove('hidden');
-                    rArea.classList.add('hidden');
-                    mPresentBtn.classList.add('hidden');
-                    mAbsentBtn.classList.remove('hidden');
-                    tArea.querySelector('textarea').required = true;
-                };
-            }
-
-            // Shared Response Handler
-            const handleResponse = (res) => {
-                if (statusMessage) {
-                    statusMessage.textContent = res.message.toUpperCase();
-                    statusMessage.className = `mb-6 p-4 rounded-lg font-bold text-xs uppercase tracking-widest ${res.success ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`;
-                    statusMessage.classList.remove('hidden');
-                    setTimeout(() => statusMessage.classList.add('hidden'), 5000);
-                }
-                if (res.success && res.logs) updateTableUI(res.logs, res.grand_total);
-            };
-
-            // Global table update
-            function updateTableUI(logs, total) {
-                if (document.querySelector('.total-hours-header')) {
-                    document.querySelector('.total-hours-header').textContent = `${parseFloat(total).toFixed(2)}h`;
-                }
-                if (document.querySelector('.total-logs-count')) {
-                    document.querySelector('.total-logs-count').textContent = logs.length;
-                }
-                if (!logTableBody) return;
-                
-                logTableBody.innerHTML = logs.length ? logs.map(log => `
-                    <tr class="table-row">
-                        <td class="px-6 py-4 whitespace-nowrap font-mono text-sm">
-                            ${log.formatted_date}
-                            ${log.status === 'Absent' ? '<span class="ml-2 text-[8px] bg-red-500/20 text-red-400 px-1 rounded">ABSENT</span>' : ''}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-500 font-mono">
-                            ${log.status === 'Absent' ? '-- : --' : log.formatted_start + ' - ' + log.formatted_end}
-                        </td>
-                        <td class="px-6 py-4 text-sm max-w-xs truncate text-gray-400">
-                            ${log.status === 'Absent' ? '<em>Reason: ' + (log.remarks || '') + '</em>' : log.tasks}
-                        </td>
-                        <td class="px-6 py-4 text-right font-mono font-bold text-blue-400">
-                            ${parseFloat(log.total_hours).toFixed(2)}
-                        </td>
-                        <td class="px-6 py-4 text-right space-x-2">
-                            <button data-id="${log.id}" data-log='${JSON.stringify(log)}' class="edit-btn text-blue-400 hover:text-blue-300 text-[10px] font-black uppercase tracking-widest">[Edit]</button>
-                            <button data-id="${log.id}" class="delete-btn text-red-500/60 hover:text-red-500 text-[10px] font-black uppercase tracking-widest">[Remove]</button>
-                        </td>
-                    </tr>
-                `).join('') : '<tr><td colspan="5" class="px-6 py-12 text-center text-gray-500 font-mono text-xs uppercase">No logs detected.</td></tr>';
-            }
-
-            // Auth Handlers
-            if (loginForm) {
-                loginForm.onsubmit = async (e) => {
-                    e.preventDefault();
-                    const r = await fetch('actions/login.php', { method: 'POST', body: new FormData(loginForm) });
-                    const d = await r.json();
-                    if (d.success) location.href = '?page=dashboard';
-                    else handleResponse(d);
-                };
-            }
-            if (signupForm) {
-                signupForm.onsubmit = async (e) => {
-                    e.preventDefault();
-                    const r = await fetch('actions/register.php', { method: 'POST', body: new FormData(signupForm) });
-                    const d = await r.json();
-                    if (d.success) location.href = '?page=login';
-                    else handleResponse(d);
-                };
-            }
-
-            // Log Form Handler
-            if (logForm) {
-                logForm.onsubmit = async (e) => {
-                    e.preventDefault();
-                    const isEdit = document.getElementById('entryIdInput').value !== "";
-                    const r = await fetch(isEdit ? 'actions/update_log.php' : 'actions/insert_log.php', {
-                        method: 'POST',
-                        body: new FormData(logForm)
-                    });
-                    const d = await r.json();
-                    handleResponse(d);
-                    if (d.success) {
-                        logForm.reset();
-                        document.getElementById('entryIdInput').value = "";
-                        document.getElementById('formTitle').textContent = "New Entry";
-                        document.getElementById('submitBtn').textContent = "Deploy Entry";
-                        if (mPresentBtn) mPresentBtn.click();
-                    }
-                };
-            }
-
-            // Table Action Delegation
-            if (logTableBody) {
-                logTableBody.onclick = async (e) => {
-                    const id = e.target.dataset.id;
-                    if (e.target.classList.contains('delete-btn')) {
-                        if (!confirm('Destroy record?')) return;
-                        const fd = new FormData();
-                        fd.append('id', id);
-                        const r = await fetch('actions/delete_log.php', { method: 'POST', body: fd });
-                        handleResponse(await r.json());
-                    } else if (e.target.classList.contains('edit-btn')) {
-                        const log = JSON.parse(e.target.dataset.log);
-                        document.getElementById('formTitle').textContent = "Edit Entry";
-                        document.getElementById('submitBtn').textContent = "Update Entry";
-                        document.getElementById('entryIdInput').value = log.id;
-                        logForm.querySelector('[name="log_date"]').value = log.log_date;
-                        if (log.status === 'Absent') {
-                            mAbsentBtn.click();
-                            logForm.querySelector('[name="remarks"]').value = log.remarks;
-                        } else {
-                            mPresentBtn.click();
-                            logForm.querySelector('[name="start_time"]').value = log.start_time;
-                            logForm.querySelector('[name="end_time"]').value = log.end_time;
-                            logForm.querySelector('[name="tasks"]').value = log.tasks;
-                        }
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }
-                };
-            }
-        });
-    </script>
+    <!-- Scripts -->
+    <script src="js/script.js"></script>
 </body>
 </html>

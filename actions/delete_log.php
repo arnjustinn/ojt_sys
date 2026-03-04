@@ -14,8 +14,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['id']) && isset($_SESS
         $stmt = $conn->prepare("DELETE FROM entries WHERE id = :id AND user_id = :user_id");
         $stmt->execute([':id' => $id, ':user_id' => $user_id]);
         
-        // Return fresh logs to update the UI without refreshing
-        require 'fetch_logs.php';
+        // Corrected filename to fetch_log.php
+        require 'fetch_log.php';
     } catch (PDOException $e) {
         echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
     }

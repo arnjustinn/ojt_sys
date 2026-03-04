@@ -5,7 +5,7 @@ require_once '../includes/functions.php';
 
 header('Content-Type: application/json');
 
-if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_SESSION['user_id'])) {
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_SESSION['user_id'])) {
     $user_id = $_SESSION['user_id'];
     $log_date = $_POST['log_date'];
     $status = $_POST['status'] ?? 'Present';
@@ -31,13 +31,21 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_SESSION['user_id'])) {
             ':total_hours' => $total_hours
         ]);
         
-        // Fetch fresh logs for the UI update
         $stmt = $conn->prepare("SELECT * FROM entries WHERE user_id = :user_id ORDER BY log_date DESC, created_at DESC");
         $stmt->execute([':user_id' => $user_id]);
         $logs = formatLogs($stmt->fetchAll(PDO::FETCH_ASSOC));
-        $grand_total = array_sum(array_column($logs, 'total_hours'));
+        
+        // Dynamic completion metrics calculation
+        $metrics = getCompletionMetrics($conn, $user_id);
 
-        echo json_encode(['success' => true, 'message' => 'Entry deployed.', 'logs' => $logs, 'grand_total' => $grand_total]);
+        echo json_encode([
+            'success' => true, 
+            'message' => 'Entry deployed.', 
+            'logs' => $logs, 
+            'grand_total' => $metrics['rendered_hours'],
+            'estimated_date' => $metrics['estimated_date'],
+            'remaining_days' => $metrics['remaining_days']
+        ]);
     } catch (PDOException $e) {
         echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
     }
