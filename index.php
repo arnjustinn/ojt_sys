@@ -81,6 +81,7 @@ function isActive($currentPage, $linkPage) {
                 <a href="?page=dashboard" class="flex items-center gap-3 p-3 rounded-lg font-medium transition <?php echo isActive($page, 'dashboard'); ?>">Dashboard</a>
                 <a href="?page=analytics" class="flex items-center gap-3 p-3 rounded-lg font-medium transition <?php echo isActive($page, 'analytics'); ?>">Analytics</a>
                 <a href="?page=settings" class="flex items-center gap-3 p-3 rounded-lg font-medium transition <?php echo isActive($page, 'settings'); ?>">Settings</a>
+                <a href="actions/logout.php" class="flex items-center gap-3 p-3 rounded-lg font-medium transition text-gray-400 hover:bg-red-500/10 hover:text-red-400">Logout</a>
             </nav>
         </div>
         <div class="mt-auto px-6 pb-6 space-y-4">
@@ -90,7 +91,6 @@ function isActive($currentPage, $linkPage) {
                     <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Intern</p>
                     <p class="text-sm font-bold truncate"><?php echo htmlspecialchars($user_name); ?></p>
                 </div>
-                <a href="actions/logout.php" class="p-2 text-gray-500 hover:text-red-400 transition">Logout</a>
             </div>
         </div>
     </aside>
@@ -197,39 +197,50 @@ function isActive($currentPage, $linkPage) {
                             <button type="submit" class="btn-primary w-full uppercase tracking-widest text-[10px] py-3">Deploy Entry</button>
                         </form>
                     </div>
-
-                    <div class="glass-card">
-                        <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4">Weekly Trend</p>
-                        <div id="weekly-chart" class="h-24 flex gap-1 items-end"></div>
-                    </div>
                 </div>
 
                 <div class="xl:col-span-3 space-y-6">
                     <div class="glass-card p-0 overflow-hidden">
-                        <div class="p-4 border-b border-[#24272e] flex flex-wrap gap-4 justify-between items-center bg-white/[0.02]">
-                            <div class="flex gap-6 items-center flex-1">
-                                <h2 class="text-xs font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Sequence Log</h2>
-                                <div class="relative flex-1 max-w-xs group">
-                                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <svg class="h-3 w-3 text-gray-500 group-focus-within:text-blue-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                        </svg>
-                                    </span>
-                                    <input type="text" id="tableSearch" placeholder="Filter sequences..." class="w-full bg-[#1b1e26] border border-[#24272e] py-2 pl-9 pr-4 rounded-lg text-xs outline-none font-mono text-gray-300 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all">
+                        <!-- Advanced Table Controls -->
+                        <div class="p-4 border-b border-[#24272e] space-y-4 bg-white/[0.02]">
+                            <div class="flex flex-wrap items-center justify-between gap-4">
+                                <div class="flex gap-6 items-center flex-1 min-w-[300px]">
+                                    <h2 class="text-xs font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Sequence Log</h2>
+                                    <div class="relative flex-1 group">
+                                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                            <svg class="h-3 w-3 text-gray-500 group-focus-within:text-blue-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                            </svg>
+                                        </span>
+                                        <input type="text" id="tableSearch" placeholder="Search keywords..." class="w-full bg-[#1b1e26] border border-[#24272e] py-2 pl-9 pr-4 rounded-lg text-xs outline-none font-mono text-gray-300 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all">
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <label class="text-[10px] font-black uppercase text-gray-500 tracking-widest">Period:</label>
+                                    <select id="monthFilter" class="bg-[#1b1e26] border border-[#24272e] px-3 py-2 rounded-lg text-[10px] font-black uppercase text-gray-400 outline-none focus:border-blue-500/50 transition-colors cursor-pointer">
+                                        <option value="">All History</option>
+                                        <?php 
+                                            $months = [];
+                                            foreach($logs as $l) $months[] = substr($l['log_date'], 0, 7);
+                                            foreach(array_unique($months) as $m) echo "<option value='$m'>".date("M Y", strtotime($m))."</option>";
+                                        ?>
+                                    </select>
                                 </div>
                             </div>
-                            <div class="flex items-center gap-2">
-                                <label class="text-[10px] font-black uppercase text-gray-500 tracking-widest">Period:</label>
-                                <select id="monthFilter" class="bg-[#1b1e26] border border-[#24272e] px-3 py-2 rounded-lg text-[10px] font-black uppercase text-gray-400 outline-none focus:border-blue-500/50 transition-colors cursor-pointer">
-                                    <option value="">All History</option>
-                                    <?php 
-                                        $months = [];
-                                        foreach($logs as $l) $months[] = substr($l['log_date'], 0, 7);
-                                        foreach(array_unique($months) as $m) echo "<option value='$m'>".date("M Y", strtotime($m))."</option>";
-                                    ?>
-                                </select>
+                            
+                            <div class="flex flex-wrap items-center gap-4 pt-4 border-t border-[#24272e]/50">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Date Range:</span>
+                                    <div class="flex items-center bg-[#1b1e26] border border-[#24272e] rounded-lg overflow-hidden">
+                                        <input type="date" id="startDateFilter" class="bg-transparent border-none p-2 text-[10px] font-mono outline-none text-gray-400 focus:text-blue-400">
+                                        <span class="text-gray-600 px-1">—</span>
+                                        <input type="date" id="endDateFilter" class="bg-transparent border-none p-2 text-[10px] font-mono outline-none text-gray-400 focus:text-blue-400">
+                                    </div>
+                                    <button id="resetFilters" class="text-[9px] font-black uppercase tracking-widest text-red-500/50 hover:text-red-500 transition ml-2">Reset</button>
+                                </div>
                             </div>
                         </div>
+
                         <div class="overflow-x-auto">
                             <table class="w-full text-left">
                                 <thead class="table-header">
@@ -395,7 +406,7 @@ function isActive($currentPage, $linkPage) {
                 e.preventDefault();
                 const formData = new FormData(signupForm);
                 try {
-                    const response = await fetch('actions/signup_process.php', { method: 'POST', body: formData });
+                    const response = await fetch('actions/register.php', { method: 'POST', body: formData });
                     const result = await response.json();
                     if (result.success) {
                         showStatus('Account created. Redirecting...');

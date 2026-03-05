@@ -1,6 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const loginForm = document.getElementById('loginForm');
-    const signupForm = document.getElementById('signupForm');
     const logForm = document.getElementById('logForm');
     const profileForm = document.getElementById('profileForm');
     const passwordForm = document.getElementById('passwordForm');
@@ -10,7 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // State Management
     let allLogs = [];
     let currentPage = 1;
-    const itemsPerPage = 5;
+    const itemsPerPage = 8;
 
     // Custom Modal Elements
     const modal = document.getElementById('customModal');
@@ -98,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     /**
-     * Start of Week Logic (Resistant to Timezone shifting)
+     * Start of Week Logic
      */
     function getStartOfWeek() {
         const now = new Date();
@@ -108,35 +106,6 @@ document.addEventListener('DOMContentLoaded', () => {
         start.setDate(start.getDate() + diff);
         start.setHours(0, 0, 0, 0);
         return start;
-    }
-
-    function renderWeeklyChart(logs) {
-        const container = document.getElementById('weekly-chart');
-        if (!container) return;
-
-        const startOfWeek = getStartOfWeek();
-        const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-        const dayHours = [0, 0, 0, 0, 0];
-
-        logs.forEach(log => {
-            const [y, m, d] = log.log_date.split('-').map(Number);
-            const logDate = new Date(y, m - 1, d);
-            
-            const diffInDays = Math.round((logDate - startOfWeek) / (1000 * 60 * 60 * 24));
-            if (diffInDays >= 0 && diffInDays < 5) {
-                dayHours[diffInDays] += parseFloat(log.total_hours);
-            }
-        });
-
-        const max = Math.max(...dayHours, 8);
-        container.innerHTML = dayHours.map((h, i) => `
-            <div class="flex-1 flex flex-col items-center justify-end group">
-                <div class="w-full bg-blue-600/10 rounded-t relative overflow-hidden" style="height: ${(h / max) * 100}%">
-                    <div class="absolute inset-0 bg-blue-500 opacity-60 group-hover:opacity-100 transition-all"></div>
-                </div>
-                <span class="text-[8px] font-black text-gray-600 uppercase mt-2">${weekDays[i]}</span>
-            </div>
-        `).join('');
     }
 
     function updateTableUI(logs, total, estDate, remDays) {
@@ -188,18 +157,25 @@ document.addEventListener('DOMContentLoaded', () => {
             progressBar.innerHTML = `<span class="flex items-center justify-center h-full text-[10px] font-black text-white">${Math.round(progressPercent)}%</span>`;
         }
 
-        renderWeeklyChart(logs);
-
         if (!logTableBody) return;
         
-        // Filtering and Pagination
+        // Advanced Filtering Logic
         const searchTerm = document.getElementById('tableSearch')?.value.toLowerCase() || "";
         const monthFilter = document.getElementById('monthFilter')?.value || "";
+        const startDate = document.getElementById('startDateFilter')?.value || "";
+        const endDate = document.getElementById('endDateFilter')?.value || "";
         
         const filtered = logs.filter(l => {
-            const matchesSearch = l.tasks.toLowerCase().includes(searchTerm) || l.formatted_date.toLowerCase().includes(searchTerm);
+            const matchesSearch = l.tasks.toLowerCase().includes(searchTerm) || 
+                                 l.formatted_date.toLowerCase().includes(searchTerm) ||
+                                 (l.remarks || "").toLowerCase().includes(searchTerm);
             const matchesMonth = monthFilter === "" || l.log_date.startsWith(monthFilter);
-            return matchesSearch && matchesMonth;
+            
+            let matchesRange = true;
+            if (startDate) matchesRange = matchesRange && l.log_date >= startDate;
+            if (endDate) matchesRange = matchesRange && l.log_date <= endDate;
+            
+            return matchesSearch && matchesMonth && matchesRange;
         });
 
         const start = (currentPage - 1) * itemsPerPage;
@@ -227,13 +203,30 @@ document.addEventListener('DOMContentLoaded', () => {
                     </td>
                 </tr>
             `;
-        }).join('') : '<tr><td colspan="4" class="px-6 py-12 text-center text-gray-500 font-mono text-xs uppercase">No logs detected.</td></tr>';
+        }).join('') : '<tr><td colspan="4" class="px-6 py-12 text-center text-gray-500 font-mono text-xs uppercase">No logs matching current filters.</td></tr>';
 
-        // Update Pagination Info
         const totalPages = Math.ceil(filtered.length / itemsPerPage);
         const pageInfo = document.getElementById('paginationInfo');
         if (pageInfo) pageInfo.textContent = `Page ${currentPage} of ${totalPages || 1}`;
     }
+
+    // Filter Listeners
+    const triggerUpdate = () => {
+        currentPage = 1;
+        updateTableUI(allLogs, 0, null, 0);
+    };
+
+    ['tableSearch', 'monthFilter', 'startDateFilter', 'endDateFilter'].forEach(id => {
+        document.getElementById(id)?.addEventListener('input', triggerUpdate);
+    });
+
+    document.getElementById('resetFilters')?.addEventListener('click', () => {
+        document.getElementById('tableSearch').value = "";
+        document.getElementById('monthFilter').value = "";
+        document.getElementById('startDateFilter').value = "";
+        document.getElementById('endDateFilter').value = "";
+        triggerUpdate();
+    });
 
     // Pagination Listeners
     document.getElementById('prevPage')?.addEventListener('click', () => {
@@ -249,14 +242,6 @@ document.addEventListener('DOMContentLoaded', () => {
             currentPage++;
             updateTableUI(allLogs, 0, null, 0);
         }
-    });
-
-    // Filter Listeners
-    ['tableSearch', 'monthFilter'].forEach(id => {
-        document.getElementById(id)?.addEventListener('input', () => {
-            currentPage = 1;
-            updateTableUI(allLogs, 0, null, 0);
-        });
     });
 
     async function backgroundRefresh() {
@@ -279,27 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     backgroundRefresh();
-    setInterval(backgroundRefresh, 30000);
-
-    if (loginForm) {
-        loginForm.onsubmit = async (e) => {
-            e.preventDefault();
-            const res = await fetch('actions/login.php', { method: 'POST', body: new FormData(loginForm) });
-            const data = await res.json();
-            if (data.success) location.href = '?page=dashboard';
-            else handleResponse(data);
-        };
-    }
-
-    if (signupForm) {
-        signupForm.onsubmit = async (e) => {
-            e.preventDefault();
-            const res = await fetch('actions/register.php', { method: 'POST', body: new FormData(signupForm) });
-            const data = await res.json();
-            if (data.success) location.href = '?page=login';
-            else handleResponse(data);
-        };
-    }
+    setInterval(backgroundRefresh, 60000);
 
     if (logForm) {
         logForm.onsubmit = async (e) => {
