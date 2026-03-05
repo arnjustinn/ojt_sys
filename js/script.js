@@ -98,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     /**
-     * Corrected Start of Week Logic (Resistant to Timezone shifting)
+     * Start of Week Logic (Resistant to Timezone shifting)
      */
     function getStartOfWeek() {
         const now = new Date();
@@ -119,11 +119,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const dayHours = [0, 0, 0, 0, 0];
 
         logs.forEach(log => {
-            // Split string manually to avoid timezone shifting during Date constructor
             const [y, m, d] = log.log_date.split('-').map(Number);
             const logDate = new Date(y, m - 1, d);
             
-            // Calculate absolute day difference
             const diffInDays = Math.round((logDate - startOfWeek) / (1000 * 60 * 60 * 24));
             if (diffInDays >= 0 && diffInDays < 5) {
                 dayHours[diffInDays] += parseFloat(log.total_hours);
@@ -134,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
         container.innerHTML = dayHours.map((h, i) => `
             <div class="flex-1 flex flex-col items-center justify-end group">
                 <div class="w-full bg-blue-600/10 rounded-t relative overflow-hidden" style="height: ${(h / max) * 100}%">
-                    <div class="absolute inset-0 bg-blue-500 opacity-40 group-hover:opacity-100 transition-all"></div>
+                    <div class="absolute inset-0 bg-blue-500 opacity-60 group-hover:opacity-100 transition-all"></div>
                 </div>
                 <span class="text-[8px] font-black text-gray-600 uppercase mt-2">${weekDays[i]}</span>
             </div>
@@ -162,7 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const req = remDays > 0 ? Math.max(0, (goal - total) / remDays) : 0;
         const isAhead = total >= goal || avg >= req;
 
-        // Correct Weekly Total Calculation
+        // Weekly Total Calculation
         const startOfWeek = getStartOfWeek();
         const weeklyTotal = logs.filter(l => {
             const [y, m, d] = l.log_date.split('-').map(Number);

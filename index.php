@@ -3,6 +3,10 @@ session_start();
 require_once 'config/db.php';
 require_once 'includes/functions.php';
 
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
 $user_id = $_SESSION['user_id'] ?? null;
 $user_name = $_SESSION['user_name'] ?? 'Guest';
 $user_email = ''; 
@@ -11,6 +15,11 @@ $page = $_GET['page'] ?? 'dashboard';
 
 if (!$user_id && !in_array($page, ['login', 'signup'])) {
     header("Location: ?page=login");
+    exit;
+}
+
+if ($user_id && in_array($page, ['login', 'signup'])) {
+    header("Location: ?page=dashboard");
     exit;
 }
 
@@ -38,7 +47,9 @@ if ($user_id) {
         $stmt->execute([':user_id' => $user_id]);
         $logs = formatLogs($stmt->fetchAll(PDO::FETCH_ASSOC));
         $metrics = getCompletionMetrics($conn, $user_id, $goal_hours);
-    } catch (PDOException $e) {}
+    } catch (PDOException $e) {
+        die("Database Error: " . $e->getMessage());
+    }
 }
 
 $progress_percent = min(100, ($metrics['rendered_hours'] / $goal_hours) * 100);
@@ -86,9 +97,58 @@ function isActive($currentPage, $linkPage) {
     <?php endif; ?>
 
     <main class="<?php echo $user_id ? 'main-content' : 'flex items-center justify-center min-h-screen'; ?>">
-        <div id="status-message" class="hidden mb-6"></div>
+        <div id="auth-status" class="hidden mb-6 p-3 text-[10px] font-black uppercase tracking-widest text-center rounded"></div>
 
-        <?php if ($page === 'dashboard'): ?>
+        <?php if ($page === 'login' && !$user_id): ?>
+            <div class="glass-card w-full max-w-sm">
+                <div class="mb-8">
+                    <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center font-bold text-xl mb-4">O</div>
+                    <h1 class="text-xl font-bold">Authenticate Session</h1>
+                    <p class="text-gray-500 text-xs font-mono">access ojt console kernel</p>
+                </div>
+                <form id="loginForm" class="space-y-4">
+                    <div>
+                        <label class="block text-[8px] font-black text-gray-500 uppercase mb-1 tracking-widest">Email Address</label>
+                        <input type="email" name="email" required class="w-full bg-[#1b1e26] border border-[#24272e] p-3 text-xs outline-none focus:border-blue-500 transition-colors">
+                    </div>
+                    <div>
+                        <label class="block text-[8px] font-black text-gray-500 uppercase mb-1 tracking-widest">Security Token</label>
+                        <input type="password" name="password" required class="w-full bg-[#1b1e26] border border-[#24272e] p-3 text-xs outline-none focus:border-blue-500 transition-colors">
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-widest text-[10px] py-4 transition shadow-lg shadow-blue-600/20">Init Login</button>
+                </form>
+                <div class="mt-8 pt-6 border-t border-white/5 text-center">
+                    <p class="text-[10px] text-gray-500 uppercase tracking-widest">No clearance? <a href="?page=signup" class="text-blue-400">Request Access</a></p>
+                </div>
+            </div>
+
+        <?php elseif ($page === 'signup' && !$user_id): ?>
+            <div class="glass-card w-full max-w-sm">
+                <div class="mb-8">
+                    <h1 class="text-xl font-bold">Create Identity</h1>
+                    <p class="text-gray-500 text-xs font-mono">register new intern profile</p>
+                </div>
+                <form id="signupForm" class="space-y-4">
+                    <div>
+                        <label class="block text-[8px] font-black text-gray-500 uppercase mb-1 tracking-widest">Full Name</label>
+                        <input type="text" name="name" required class="w-full bg-[#1b1e26] border border-[#24272e] p-3 text-xs outline-none focus:border-blue-500 transition-colors">
+                    </div>
+                    <div>
+                        <label class="block text-[8px] font-black text-gray-500 uppercase mb-1 tracking-widest">Email Address</label>
+                        <input type="email" name="email" required class="w-full bg-[#1b1e26] border border-[#24272e] p-3 text-xs outline-none focus:border-blue-500 transition-colors">
+                    </div>
+                    <div>
+                        <label class="block text-[8px] font-black text-gray-500 uppercase mb-1 tracking-widest">Password</label>
+                        <input type="password" name="password" required class="w-full bg-[#1b1e26] border border-[#24272e] p-3 text-xs outline-none focus:border-blue-500 transition-colors">
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-widest text-[10px] py-4 transition shadow-lg shadow-blue-600/20">Finalize Registration</button>
+                </form>
+                <div class="mt-8 pt-6 border-t border-white/5 text-center">
+                    <p class="text-[10px] text-gray-500 uppercase tracking-widest">Existing user? <a href="?page=login" class="text-blue-400">Return to Login</a></p>
+                </div>
+            </div>
+
+        <?php elseif ($page === 'dashboard'): ?>
             <header class="flex justify-between items-end mb-8">
                 <div>
                     <h1 class="text-2xl font-bold">Workspace</h1>
@@ -140,9 +200,7 @@ function isActive($currentPage, $linkPage) {
 
                     <div class="glass-card">
                         <p class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4">Weekly Trend</p>
-                        <div id="weekly-chart" class="h-24 flex gap-1 items-end">
-                            <!-- Bars generated by script.js -->
-                        </div>
+                        <div id="weekly-chart" class="h-24 flex gap-1 items-end"></div>
                     </div>
                 </div>
 
@@ -182,9 +240,7 @@ function isActive($currentPage, $linkPage) {
                                         <th class="px-6 py-4 text-right">Action</th>
                                     </tr>
                                 </thead>
-                                <tbody class="divide-y divide-[#24272e]">
-                                    <!-- Rows generated by script.js -->
-                                </tbody>
+                                <tbody class="divide-y divide-[#24272e]"></tbody>
                             </table>
                         </div>
                         <div class="p-4 flex justify-between items-center border-t border-[#24272e] bg-white/[0.01]">
@@ -304,6 +360,55 @@ function isActive($currentPage, $linkPage) {
         </div>
     </div>
 
+    <script>
+        // Auth Handling for Login/Signup
+        const loginForm = document.getElementById('loginForm');
+        const signupForm = document.getElementById('signupForm');
+        const authStatus = document.getElementById('auth-status');
+
+        function showStatus(message, isError = false) {
+            authStatus.textContent = message;
+            authStatus.className = `block mb-6 p-3 text-[10px] font-black uppercase tracking-widest text-center rounded ${isError ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-green-500/10 text-green-400 border border-green-500/20'}`;
+            authStatus.classList.remove('hidden');
+        }
+
+        if (loginForm) {
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const formData = new FormData(loginForm);
+                try {
+                    const response = await fetch('actions/login.php', { method: 'POST', body: formData });
+                    const result = await response.json();
+                    if (result.success) {
+                        window.location.href = '?page=dashboard';
+                    } else {
+                        showStatus(result.message, true);
+                    }
+                } catch (err) {
+                    showStatus('Server connection failed', true);
+                }
+            });
+        }
+
+        if (signupForm) {
+            signupForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const formData = new FormData(signupForm);
+                try {
+                    const response = await fetch('actions/signup_process.php', { method: 'POST', body: formData });
+                    const result = await response.json();
+                    if (result.success) {
+                        showStatus('Account created. Redirecting...');
+                        setTimeout(() => window.location.href = '?page=login', 1500);
+                    } else {
+                        showStatus(result.message, true);
+                    }
+                } catch (err) {
+                    showStatus('Registration failed', true);
+                }
+            });
+        }
+    </script>
     <script src="js/script.js"></script>
 </body>
 </html>
